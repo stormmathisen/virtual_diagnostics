@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -112,8 +115,38 @@ jobs:
       # import that only breaks without the optional dependencies installed.
       - run: mkdocs build --strict
 
+      # Downloadable from every run, including pull requests:
+      #   gh run download -n site -D site && python -m http.server -d site 8000
       - uses: actions/upload-artifact@v4
         with:
           name: site
           path: site/
           retention-days: 14
+
+      # Only needed when the site is actually being published.
+      - uses: actions/upload-pages-artifact@v3
+        if: vars.PUBLISH_DOCS == 'true'
+        with:
+          path: site/
+
+  # Dormant until PUBLISH_DOCS is set. GitHub Pages cannot serve a private
+  # repository on the Free plan, so enabling this needs either GitHub Pro or a
+  # public repository, and then:
+  #   gh api -X POST repos/OWNER/REPO/pages -f build_type=workflow
+  #   gh variable set PUBLISH_DOCS --body true
+  publish-docs:
+    name: publish docs
+    needs: docs
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && vars.PUBLISH_DOCS == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

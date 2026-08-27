@@ -127,6 +127,29 @@ Three jobs, on push and pull request:
 - **full** — Python 3.10 and 3.12, with ngspice and every extra installed and
   `VD_REQUIRE_ALL_EXTRAS=1` so nothing can skip silently. Also runs the example end to end.
 - **docs** — `mkdocs build --strict`, uploading the built site as an artifact.
+- **publish docs** — dormant. See below.
+
+### Reading the docs from CI
+
+```bash
+gh run download -n site -D site && python -m http.server -d site 8000
+```
+
+### Publishing the docs
+
+A `publish-docs` job is wired up but disabled. GitHub Pages **cannot serve a private
+repository on the Free plan**, and on Pro/Team a Pages site built from a private repo is
+publicly readable — only Enterprise Cloud offers access-controlled private Pages. So
+publishing means either upgrading, or making the repo public.
+
+When either is true:
+
+```bash
+gh api -X POST repos/stormmathisen/virtual_diagnostics/pages -f build_type=workflow
+gh variable set PUBLISH_DOCS --body true
+```
+
+The next push to `main` deploys to <https://stormmathisen.github.io/virtual_diagnostics/>.
 
 Known-answer checks, not smoke tests: charge conservation through a screen, PSF adding in
 quadrature, the Poisson kernel integrating to one, a stripline's zero DC response, the

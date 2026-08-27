@@ -1,4 +1,5 @@
 site_name: virtual_diagnostics
+site_url: https://stormmathisen.github.io/virtual_diagnostics/
 site_description: Turn simulated particle distributions into realistic accelerator diagnostic outputs.
 repo_url: https://github.com/stormmathisen/virtual_diagnostics
 
