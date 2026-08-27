@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    # The package claims to need only NumPy, SciPy and Matplotlib. This job is
+    # what makes that claim true: no torch, no h5py, no ngspice.
+    name: core only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev]"
+
+      - name: import without any optional dependency
+        run: |
+          python - <<'PY'
+          import importlib
+          import virtual_diagnostics as vd
+
+          for name in ("torch", "cheetah", "h5py", "PySpice"):
+              try:
+                  importlib.import_module(name)
+              except ImportError:
+                  continue
+              raise SystemExit(f"{name} is installed; this job must run without it")
+
+          assert not vd.ngspice_available(), "ngspice must not be installed in this job"
+          print(f"core-only import OK, {len(vd.__all__)} public names")
+          PY
+
+      - name: the SPICE front end must fail gracefully, with instructions
+        run: |
+          python - <<'PY'
+          import virtual_diagnostics as vd
+
+          try:
+              vd.SpiceFrontEnd(netlist="x").simulate("x")
+          except vd.NgspiceNotFound as error:
+              for expected in ("apt install ngspice", "brew install ngspice",
+                               "NGSPICE_EXECUTABLE"):
+                  assert expected in str(error), f"missing from the message: {expected}"
+              print("NgspiceNotFound carries installation instructions")
+          else:
+              raise SystemExit("expected NgspiceNotFound")
+          PY
+
+      - run: pytest -q -ra
+
+  full:
+    name: full (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: install ngspice
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ngspice
+          ngspice -v | head -3
+
+      - run: pip install -e ".[all]"
+
+      - name: tests, with every optional dependency required
+        # VD_REQUIRE_ALL_EXTRAS turns a missing optional dependency into a
+        # failure instead of a silent skip. -ra prints the reason for anything
+        # that does skip, so a new one cannot hide.
+        env:
+          VD_REQUIRE_ALL_EXTRAS: "1"
+        run: pytest -q -ra
+
+      - name: end-to-end example
+        if: matrix.python == '3.12'
+        run: python examples/clara_diagnostics.py
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[docs]"
+
+      # --strict turns broken links, missing anchors and malformed docstrings
+      # into errors. mkdocstrings imports the package, so this also catches an
+      # import that only breaks without the optional dependencies installed.
+      - run: mkdocs build --strict
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site/
+          retention-days: 14

@@ -1,5 +1,7 @@
 # virtual_diagnostics
 
+[![CI](https://github.com/stormmathisen/virtual_diagnostics/actions/workflows/ci.yml/badge.svg)](https://github.com/stormmathisen/virtual_diagnostics/actions/workflows/ci.yml)
+
 Turn simulated particle distributions into realistic accelerator diagnostic outputs.
 
 Simulation stops at the beam. The control system starts at the signal. This package owns
@@ -104,6 +106,27 @@ writing the figures used in the documentation.
 ```bash
 .venv/bin/pytest -q
 ```
+
+Optional integrations skip when their dependency is missing, which is right locally and
+dangerous in CI — a runner without ngspice or Cheetah reports success while a fifth of the
+suite never runs. Set `VD_REQUIRE_ALL_EXTRAS=1` to turn a missing optional dependency into
+a failure instead:
+
+```bash
+VD_REQUIRE_ALL_EXTRAS=1 .venv/bin/pytest -q -ra
+```
+
+## CI
+
+Three jobs, on push and pull request:
+
+- **core only** — installs no optional dependency at all, and asserts that torch, Cheetah,
+  h5py and ngspice are absent. This is what makes the "core needs only NumPy, SciPy and
+  Matplotlib" claim true, and it checks that `NgspiceNotFound` still carries installation
+  instructions.
+- **full** — Python 3.10 and 3.12, with ngspice and every extra installed and
+  `VD_REQUIRE_ALL_EXTRAS=1` so nothing can skip silently. Also runs the example end to end.
+- **docs** — `mkdocs build --strict`, uploading the built site as an artifact.
 
 Known-answer checks, not smoke tests: charge conservation through a screen, PSF adding in
 quadrature, the Poisson kernel integrating to one, a stripline's zero DC response, the
