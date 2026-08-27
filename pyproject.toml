@@ -20,7 +20,6 @@ dependencies = ["numpy>=1.24", "scipy>=1.10", "matplotlib>=3.7"]
 
 [project.optional-dependencies]
 cheetah = ["cheetah-accelerator>=0.7"]
-spice = ["PySpice>=1.5"]
 hdf5 = ["h5py>=3.8"]
 docs = [
     "mkdocs>=1.6",
@@ -28,7 +27,9 @@ docs = [
     "mkdocstrings[python]>=0.25",
 ]
 dev = ["pytest>=7.4"]
-all = ["virtual-diagnostics[cheetah,spice,hdf5,docs,dev]"]
+# The SPICE front end needs the ngspice *binary*, not a Python package:
+#   apt install ngspice   /   brew install ngspice
+all = ["virtual-diagnostics[cheetah,hdf5,docs,dev]"]
 
 [project.urls]
 Documentation = "https://github.com/stormmathisen/virtual_diagnostics"

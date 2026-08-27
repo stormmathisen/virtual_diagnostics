@@ -18,13 +18,19 @@ bandwidth-limited pickup waveform that droops, a BPM reading that falls apart at
 ## Install
 
 ```bash
-pip install -e ".[cheetah,hdf5,docs,dev]"
+pip install -e ".[all]"        # or pick extras: cheetah, hdf5, docs, dev
+sudo apt install ngspice       # only for the SPICE front end
 ```
 
 The core needs only NumPy, SciPy and Matplotlib. The `cheetah` extra pulls in
-[Cheetah](https://github.com/desy-ml/cheetah) (and therefore torch) and is only needed for the
-Cheetah adapter — any other tracking code plugs in through
+[Cheetah](https://github.com/desy-ml/cheetah) (and therefore torch) and is only needed for
+the Cheetah adapter — any other tracking code plugs in through
 [`from_arrays`](guides/other-codes.md) with no extra dependencies at all.
+
+[Signal conditioning](guides/spice.md) shells out to the **ngspice binary**. There is no
+Python SPICE binding to install and none is used; without ngspice,
+`ngspice_available()` returns `False`, simulations raise `NgspiceNotFound` carrying
+installation instructions, and everything else works unchanged.
 
 ## Sixty seconds
 
@@ -101,20 +107,20 @@ beam at the screen:
 
 screen (YAG, 12 um pixels, 30 um PSF):
   frame           640 x 480 px, 12-bit
-  peak            2849 counts
+  peak            2936 counts
   off screen         0.000 %
   saturated          0.000 % of pixels
-  measured sigma     54.70 /   112.56 um  (raw)
-  measured sigma     45.61 /   108.44 um  (deconvolved)
+  measured sigma     55.05 /   112.75 um  (raw)
+  measured sigma     46.03 /   108.64 um  (deconvolved)
   true sigma         46.09 /   108.97 um
 
 current monitors:
-  ICT peak          31.499 mV
+  ICT peak          31.497 mV
   ICT integral      206.25 pC  (droop under-reads)
   ICT bandwidth      17.48 MHz
   FCT peak            5.14 A   (100 ps rise: still integrating)
   FCT integral      250.00 pC
-  fast peak          99.27 A   (200 fs rise: follows the current)
+  fast peak          99.74 A   (200 fs rise: follows the current)
   peak current       99.67 A   (true)
   true charge       250.00 pC
   wrote examples/ict_pulse.pwl for SPICE
@@ -139,32 +145,32 @@ per-electrode models:
 
 delay-line combiner (the delay line lives in the netlist):
     x (mm)   direct (V)  delayed (V)   difference/sum
-     -2.00       2.4171       2.1062         0.068735
-     -1.00       2.6109       1.9760         0.138414
-      0.00       2.8068       1.8434         0.207183
-      1.00       3.0027       1.7108         0.274078
+     -2.00       2.4171       2.1064         0.068684
+     -1.00       2.6108       1.9760         0.138400
+      0.00       2.8068       1.8434         0.207166
+      1.00       3.0027       1.7108         0.274084
       2.00       3.1955       1.5798         0.338346
-  calibration: x = 14.813 mm * (d/s) + -3042.0 um
+  calibration: x = 14.811 mm * (d/s) + -3041.2 um
   geometric expectation b/sqrt(2) = 14.142 mm
   the offset is the branch asymmetry -- one side goes through the line
 
 spectrometer (0.4 m dispersion):
   mean energy      100.000 MeV
-  energy spread      99.97 keV  (measured)
+  energy spread      99.90 keV  (measured)
   true spread       100.00 keV
 
 transverse deflector (3.0e+08 m/s shear):
-  bunch length      999.21 fs  (measured)
+  bunch length     1002.18 fs  (measured)
   true length      1000.69 fs
   pixel limit        66.67 fs
 
 CTR monitor (0.3-3 THz band):
-  sigma_t   1500 fs ->     0.0017 mV
-  sigma_t   1000 fs ->     0.0137 mV
-  sigma_t    600 fs ->     0.6299 mV
-  sigma_t    400 fs ->     2.1437 mV
-  sigma_t    250 fs ->     6.4140 mV
-  sigma_t    150 fs ->    16.0745 mV
+  sigma_t   1500 fs ->     0.0018 mV
+  sigma_t   1000 fs ->     0.0129 mV
+  sigma_t    600 fs ->     0.6226 mV
+  sigma_t    400 fs ->     2.0981 mV
+  sigma_t    250 fs ->     6.2977 mV
+  sigma_t    150 fs ->    16.0359 mV
 
 figures written to docs/images/
 ```

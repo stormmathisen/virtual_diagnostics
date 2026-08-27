@@ -6,8 +6,9 @@ limiters — lives in a SPICE netlist, where you have already designed it.
 [`SpiceFrontEnd`](../api/spice.md) drives that netlist with the diagnostic's signals and
 hands back the conditioned result.
 
-There are two ways to get a signal into SPICE, and you want the first one unless you have
-a reason not to.
+This runs the ngspice binary as a subprocess and reads its rawfile — see
+[Getting ngspice working](#getting-ngspice-working). There are two ways to get a signal
+in, and you want the first one unless you have a reason not to.
 
 ## Run the netlist from Python
 
@@ -142,29 +143,89 @@ up with the times you passed in.
 
 ## Getting ngspice working
 
+The SPICE front end shells out to the **ngspice command-line binary**. There is no
+Python SPICE binding to install and none is used.
+
 ```bash
-pip install -e ".[spice]"        # PySpice
-sudo apt install libngspice0     # the shared library
-python -c "import virtual_diagnostics as vd; print(vd.ngspice_available())"
+sudo apt install ngspice        # Debian/Ubuntu
+sudo dnf install ngspice        # Fedora/RHEL
+sudo pacman -S ngspice          # Arch
+brew install ngspice            # macOS
+conda install -c conda-forge ngspice
 ```
 
-Two wrinkles are handled for you, both verified against ngspice 42 and PySpice 1.5:
+Windows: take the build from <https://ngspice.sourceforge.io/download.html> and put the
+directory holding `ngspice_con.exe` on `PATH`.
 
-- **The library name.** PySpice looks for `libngspice.so`, but distributions ship
-  `libngspice.so.0` and only provide the unversioned symlink in the `-dev` package.
-  `ngspice_library_path()` finds the versioned file and points PySpice at it through
-  `NGSPICE_LIBRARY_PATH`. Set that variable yourself to override.
-- **A benign banner treated as an error.** PySpice 1.5 treats any ngspice stderr message
-  that does not begin with `Warning:` as a failure, and ngspice 42 prints
-  `Using SPARSE 1.3 as Direct Linear Solver` there on every run. The simulation
-  succeeds; only the wrapper thinks otherwise. This module decides success by whether the
-  run actually produced data, and surfaces the real stderr if it did not.
+Check it:
 
-You may still see `Note: can't find the initialization file spinit.` and
-`Unsupported Ngspice version 42` printed by the C library. Both are harmless.
+```python
+import virtual_diagnostics as vd
+vd.ngspice_available()     # True
+vd.ngspice_version()       # 'ngspice-45 : Circuit level simulation program'
+```
 
-If ngspice is missing, `ngspice_available()` returns `False` and nothing else in the
-package is affected — the SPICE path is entirely optional.
+If it lives somewhere unusual, point at it directly:
+
+```bash
+export NGSPICE_EXECUTABLE=/opt/ngspice/bin/ngspice
+```
+
+### If it is not installed
+
+Nothing else in the package is affected — `ngspice_available()` returns `False`, and any
+attempt to run a simulation raises `NgspiceNotFound` carrying the instructions above:
+
+```text
+Cannot run the SPICE front end.
+
+ngspice was not found.
+
+  Debian/Ubuntu   sudo apt install ngspice
+  Fedora/RHEL     sudo dnf install ngspice
+  ...
+If it is installed somewhere unusual, point at it directly:
+  export NGSPICE_EXECUTABLE=/path/to/ngspice
+```
+
+Guard optional code with `vd.ngspice_available()`, as `examples/clara_diagnostics.py`
+does.
+
+### Why a subprocess rather than a Python binding
+
+The obvious alternative is PySpice, and it was the first thing tried here. It was
+removed:
+
+- Its last release is 1.5, from 2021, and it rejects any ngspice newer than its
+  hard-coded list — including the versions distributions now ship.
+- It resolves the library path into a class attribute at *import* time, defaulting to the
+  bare name `libngspice.so`, which distributions do not ship outside the `-dev` package.
+- It treats any ngspice message on stderr not beginning with `Warning:` as a fatal error.
+  Recent ngspice prints a solver banner there on every successful run.
+- The shared library is process-global: a circuit that makes ngspice abort takes the
+  Python session with it.
+
+Running the binary avoids all of it. ngspice itself is actively released, the subprocess
+is isolated, several runs parallelise across cores with nothing shared, and the only
+thing to install is a normal system package.
+
+### Errors you will actually see
+
+`NgspiceError` carries ngspice's own log, so a bad netlist reports itself:
+
+```python
+try:
+    front_end.run(t, v)
+except vd.NgspiceError as error:
+    print(error)      # includes the exit code and ngspice's stdout/stderr
+```
+
+`build(t, signals)` returns exactly the netlist that gets handed to ngspice — start
+there. `simulate(netlist)` runs a complete netlist you wrote yourself and returns every
+vector in the rawfile, which is the hook for an `.ac` sweep or a `.dc` scan.
+
+`read_rawfile(path)` parses an ngspice rawfile on its own, binary or ASCII, real or
+complex.
 
 ## Limits
 

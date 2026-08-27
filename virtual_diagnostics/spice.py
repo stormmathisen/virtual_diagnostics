@@ -6,32 +6,26 @@ designed in SPICE --- the amplifier, the filter, the cable, the delay line, the
 limiter in front of the ADC.  :class:`SpiceFrontEnd` takes your netlist, drives
 it with the beam-derived waveform, and hands back what comes out the other side.
 
-Requires the ``spice`` extra (`PySpice`) and a working ngspice shared library.
-When either is missing, :func:`ngspice_available` returns ``False`` and nothing
-else in the package is affected --- the SPICE path is entirely optional.
+This runs the **ngspice command-line binary** as a subprocess and reads its
+rawfile.  There is no Python SPICE binding involved, which is deliberate:
 
-Notes
------
-Two practical wrinkles are handled here so you do not have to.
+- ngspice itself is actively released; the Python bindings are not.
+- A subprocess is isolated.  A circuit that makes ngspice abort takes down a
+  child process, not your Python session.
+- Several runs go in parallel across cores with nothing shared between them.
+- The only thing to install is a normal system package.
 
-*The library name.*  PySpice looks for ``libngspice.so``, but distributions ship
-``libngspice.so.0`` and only provide the unversioned symlink in the ``-dev``
-package.  :func:`ngspice_library_path` finds the versioned file and points
-PySpice at it through ``NGSPICE_LIBRARY_PATH``.
-
-*A benign banner treated as an error.*  PySpice 1.5 treats any ngspice message
-on stderr that does not begin with ``Warning:`` as a failure, and ngspice 42
-prints ``Using SPARSE 1.3 as Direct Linear Solver`` there on every run.  The
-simulation succeeds; only the wrapper thinks otherwise.  This module decides
-success by whether the run actually produced data, and surfaces the real stderr
-if it did not.
+If ngspice is not installed, :func:`ngspice_available` returns ``False`` and
+every call raises :class:`NgspiceNotFound` with installation instructions.
+Nothing else in the package is affected --- the SPICE path is entirely optional.
 """
 
 from __future__ import annotations
 
-import ctypes.util
-import glob
 import os
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,65 +33,193 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-_SEARCH_DIRECTORIES = (
-    "/usr/lib/x86_64-linux-gnu",
-    "/usr/lib64",
-    "/usr/lib",
-    "/usr/local/lib",
-    "/opt/homebrew/lib",
-    "/usr/local/opt/ngspice/lib",
+INSTALL_HINT = """\
+ngspice was not found.
+
+  Debian/Ubuntu   sudo apt install ngspice
+  Fedora/RHEL     sudo dnf install ngspice
+  Arch            sudo pacman -S ngspice
+  macOS           brew install ngspice
+  conda           conda install -c conda-forge ngspice
+  Windows         https://ngspice.sourceforge.io/download.html
+                  (add the directory holding ngspice_con.exe to PATH)
+
+Then check it with:  ngspice -v
+
+If it is installed somewhere unusual, point at it directly:
+  export NGSPICE_EXECUTABLE=/path/to/ngspice\
+"""
+
+_CANDIDATE_PATHS = (
+    "/usr/bin/ngspice",
+    "/usr/local/bin/ngspice",
+    "/opt/homebrew/bin/ngspice",
+    "/opt/local/bin/ngspice",
 )
 
-_shared = None
+
+class NgspiceNotFound(RuntimeError):
+    """Raised when the ngspice binary cannot be located.
+
+    Carries the installation instructions in its message, so a user who hits
+    this in a script does not have to go looking for them.
+    """
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__((detail + "\n\n" if detail else "") + INSTALL_HINT)
 
 
-def ngspice_library_path() -> str | None:
-    """Locate the ngspice shared library, versioned name included.
+class NgspiceError(RuntimeError):
+    """Raised when ngspice ran but did not produce usable results."""
+
+
+def ngspice_executable() -> str | None:
+    """Locate the ngspice binary.
+
+    Honours ``NGSPICE_EXECUTABLE``, then ``PATH``, then a few usual places.
 
     Returns
     -------
     str or None
-        Path to the library, or ``None`` if nothing was found.  An existing
-        ``NGSPICE_LIBRARY_PATH`` always wins.
+        Path to the executable, or ``None`` if it was not found.
     """
-    configured = os.environ.get("NGSPICE_LIBRARY_PATH")
+    configured = os.environ.get("NGSPICE_EXECUTABLE")
     if configured:
-        return configured
-    found = ctypes.util.find_library("ngspice")
-    if found and os.path.isabs(found):
-        return found
-    for directory in _SEARCH_DIRECTORIES:
-        matches = sorted(glob.glob(os.path.join(directory, "libngspice.so*")))
-        matches += sorted(glob.glob(os.path.join(directory, "libngspice*.dylib")))
-        if matches:
-            return matches[0]
+        return configured if os.path.exists(configured) else None
+    for name in ("ngspice", "ngspice_con"):
+        found = shutil.which(name)
+        if found:
+            return found
+    for candidate in _CANDIDATE_PATHS:
+        if os.path.exists(candidate):
+            return candidate
     return None
 
 
 def ngspice_available() -> bool:
     """Whether a SPICE simulation can actually be run in this environment."""
+    return ngspice_executable() is not None
+
+
+def ngspice_version() -> str | None:
+    """Version string reported by ``ngspice -v``, or ``None`` if unavailable."""
+    executable = ngspice_executable()
+    if executable is None:
+        return None
     try:
-        _shared_instance()
-    except Exception:
-        return False
-    return True
+        result = subprocess.run(
+            [executable, "-v"], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in (result.stdout + result.stderr).splitlines():
+        # ngspice decorates its banner with asterisks.
+        cleaned = line.strip().strip("*").strip()
+        if "ngspice" in cleaned.lower() and any(ch.isdigit() for ch in cleaned):
+            return cleaned
+    return None
 
 
-def _shared_instance():
-    """Return the process-wide ngspice instance, creating it on first use."""
-    global _shared
-    if _shared is not None:
-        return _shared
+def read_rawfile(path: str | os.PathLike) -> dict[str, NDArray]:
+    """Parse an ngspice rawfile into ``{variable_name: values}``.
 
-    path = ngspice_library_path()
-    if path and not os.environ.get("NGSPICE_LIBRARY_PATH"):
-        # Must be set before PySpice imports, hence the local import below.
-        os.environ["NGSPICE_LIBRARY_PATH"] = path
+    Handles both the binary and ASCII layouts, and both real (transient, DC) and
+    complex (AC) data.
 
-    from PySpice.Spice.NgSpice.Shared import NgSpiceShared
+    Parameters
+    ----------
+    path : path-like
+        The rawfile written by ``ngspice -r``.
 
-    _shared = NgSpiceShared.new_instance()
-    return _shared
+    Returns
+    -------
+    dict
+        Variable name (lower-cased, as ngspice writes it --- ``"time"``,
+        ``"v(out)"``, ``"i(vin)"``) mapped to a 1-D array.  Complex analyses give
+        complex arrays.
+
+    Raises
+    ------
+    NgspiceError
+        If the file is missing, truncated, or has no recognisable header.
+
+    Notes
+    -----
+    Only the **last** plot in the file is returned.  ngspice appends a plot per
+    analysis, and the one you asked for is the one that ran last.
+    """
+    raw = Path(path).read_bytes()
+    marker_binary = raw.rfind(b"Binary:\n")
+    marker_ascii = raw.rfind(b"Values:\n")
+    if marker_binary < 0 and marker_ascii < 0:
+        raise NgspiceError(
+            f"{path} is not an ngspice rawfile (no 'Binary:' or 'Values:' marker)."
+        )
+    is_binary = marker_binary > marker_ascii
+    marker = marker_binary if is_binary else marker_ascii
+
+    header_start = raw.rfind(b"Title:", 0, marker)
+    header = raw[max(header_start, 0) : marker].decode("utf-8", errors="replace")
+
+    variables: list[str] = []
+    n_points = 0
+    complex_data = False
+    in_variables = False
+    for line in header.splitlines():
+        stripped = line.strip()
+        lowered = stripped.lower()
+        if lowered.startswith("flags:"):
+            complex_data = "complex" in lowered
+        elif lowered.startswith("no. points:"):
+            n_points = int(stripped.split(":", 1)[1])
+        elif lowered.startswith("variables:"):
+            in_variables = True
+        elif in_variables and stripped:
+            fields = stripped.split()
+            if len(fields) >= 2 and fields[0].isdigit():
+                variables.append(fields[1].lower())
+
+    if not variables or n_points <= 0:
+        raise NgspiceError(f"{path} has no variables or no points in its header.")
+
+    n_vars = len(variables)
+    body = raw[marker + len(b"Binary:\n" if is_binary else b"Values:\n") :]
+
+    if is_binary:
+        per_value = 2 if complex_data else 1
+        expected = n_points * n_vars * per_value
+        # Trim to a whole number of doubles first: frombuffer raises on a short
+        # or ragged buffer, which would hide the real problem.
+        values = np.frombuffer(body[: (len(body) // 8) * 8], dtype="<f8")
+        if values.size < expected:
+            raise NgspiceError(
+                f"{path} is truncated: expected {expected} doubles, got {values.size}."
+            )
+        values = values[:expected]
+        if complex_data:
+            values = values[0::2] + 1j * values[1::2]
+        table = values.reshape(n_points, n_vars)
+    else:
+        numbers: list[complex] = []
+        for line in body.decode("utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            fields = stripped.split()
+            token = fields[1] if fields[0].isdigit() and len(fields) > 1 else fields[0]
+            numbers.append(complex(token.replace(",", "+") + "j") if complex_data else float(token))
+        table = np.asarray(numbers).reshape(n_points, n_vars)
+
+    return {name: np.ascontiguousarray(table[:, i]) for i, name in enumerate(variables)}
+
+
+def _lookup(results: dict[str, NDArray], name: str) -> NDArray | None:
+    """Find a node in rawfile results, tolerating the ``v(...)`` wrapper."""
+    lowered = name.lower()
+    for key in (lowered, f"v({lowered})", f"i({lowered})"):
+        if key in results:
+            return results[key]
+    return None
 
 
 def _format_pwl(t: NDArray[np.floating], v: NDArray[np.floating]) -> str:
@@ -143,15 +265,20 @@ class SpiceFrontEnd:
     outputs : str or sequence of str
         Node or nodes to return.  A single string gives back a plain array; a
         sequence gives back a dict keyed by node name.  Names are
-        case-insensitive.
+        case-insensitive, and the ``v(...)`` wrapper ngspice uses is optional.
     max_points : int
         Most PWL points to inline per source.  A long record is decimated
-        uniformly, endpoints kept.  Inlining tens of thousands of points makes
-        ngspice crawl for no benefit.
+        uniformly, endpoints kept.
     step_time : float or None
         Transient step.  ``None`` uses the input sample interval.
     end_time : float or None
         Transient end time.  ``None`` uses the record length.
+    max_step : float or None
+        Maximum timestep ngspice may take, the fourth ``.tran`` argument.
+        ``None`` lets ngspice choose, which is usually right; set it if a fast
+        edge is being stepped over.
+    timeout : float
+        Seconds to wait for ngspice before giving up.
 
     Examples
     --------
@@ -190,6 +317,8 @@ class SpiceFrontEnd:
     max_points: int = 4000
     step_time: float | None = None
     end_time: float | None = None
+    max_step: float | None = None
+    timeout: float = 300.0
 
     @property
     def source_names(self) -> tuple[str, ...]:
@@ -249,14 +378,14 @@ class SpiceFrontEnd:
         step = self.step_time if self.step_time is not None else float(t[1] - t[0])
         end = self.end_time if self.end_time is not None else float(t[-1])
 
-        thinned = {}
+        thinned: dict[str, NDArray[np.floating]] = {}
         thinned_t = t
         for name, waveform in driven.items():
             thinned_t, thinned[name] = _decimate(t, waveform, self.max_points)
 
         wanted = {name.lower(): name for name in self.source_names}
-        seen = set()
-        output_lines = []
+        seen: set[str] = set()
+        lines: list[str] = []
         for line in self.netlist_text().splitlines():
             stripped = line.strip()
             tokens = stripped.split()
@@ -266,14 +395,16 @@ class SpiceFrontEnd:
                     raise ValueError(f"source line {stripped!r} does not name two nodes")
                 name = wanted[key]
                 seen.add(name)
-                pwl = _format_pwl(thinned_t, thinned[name])
-                output_lines.append(f"{tokens[0]} {tokens[1]} {tokens[2]} PWL({pwl})")
+                lines.append(
+                    f"{tokens[0]} {tokens[1]} {tokens[2]} "
+                    f"PWL({_format_pwl(thinned_t, thinned[name])})"
+                )
             elif stripped.lower().startswith(".tran"):
                 continue  # rewritten below
             elif stripped.lower().startswith(".end") and not stripped.lower().startswith(".ends"):
                 continue  # re-added below
             else:
-                output_lines.append(line)
+                lines.append(line)
 
         missing = [name for name in self.source_names if name not in seen]
         if missing:
@@ -283,9 +414,63 @@ class SpiceFrontEnd:
                 "diagnostic signal enters."
             )
 
-        output_lines.append(f".tran {step:.9e} {end:.9e}")
-        output_lines.append(".end")
-        return "\n".join(output_lines) + "\n"
+        tran = f".tran {step:.9e} {end:.9e}"
+        if self.max_step is not None:
+            tran += f" 0 {self.max_step:.9e}"
+        lines.append(tran)
+        lines.append(".end")
+        return "\n".join(lines) + "\n"
+
+    def simulate(self, netlist: str) -> dict[str, NDArray]:
+        """Run a complete netlist through ngspice and return its rawfile vectors.
+
+        Exposed so you can drive ngspice with a netlist this class did not build
+        --- an ``.ac`` sweep, say.
+
+        Raises
+        ------
+        NgspiceNotFound
+            If the binary is not installed.  The message carries the
+            installation instructions.
+        NgspiceError
+            If ngspice ran but produced no usable output; the message carries
+            ngspice's own log.
+        """
+        executable = ngspice_executable()
+        if executable is None:
+            raise NgspiceNotFound("Cannot run the SPICE front end.")
+
+        with tempfile.TemporaryDirectory(prefix="virtual_diagnostics_") as directory:
+            work = Path(directory)
+            circuit = work / "circuit.cir"
+            rawfile = work / "out.raw"
+            circuit.write_text(netlist)
+            try:
+                completed = subprocess.run(
+                    [executable, "-b", "-r", str(rawfile), str(circuit)],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise NgspiceError(
+                    f"ngspice did not finish within {self.timeout} s. Reduce "
+                    "max_points, shorten the record, or raise timeout."
+                ) from error
+
+            log = (completed.stdout + completed.stderr).strip()
+            if not rawfile.exists():
+                raise NgspiceError(
+                    f"ngspice produced no rawfile (exit code {completed.returncode}).\n"
+                    f"--- ngspice output ---\n{log}"
+                )
+            try:
+                return read_rawfile(rawfile)
+            except NgspiceError as error:
+                raise NgspiceError(
+                    f"{error}\nexit code {completed.returncode}\n"
+                    f"--- ngspice output ---\n{log}"
+                ) from None
 
     def run(self, t: ArrayLike, signals, resample: bool = True):
         """Drive the netlist and read the output node or nodes.
@@ -311,12 +496,6 @@ class SpiceFrontEnd:
         result : ndarray or dict of ndarray
             An array when ``outputs`` is a single node name, otherwise a dict
             keyed by node name.
-
-        Raises
-        ------
-        RuntimeError
-            If ngspice is unavailable, or if the run produced no data --- the
-            simulator's stderr is included in the message.
         """
         t = np.asarray(t, dtype=float)
         if t.ndim != 1 or t.size < 2:
@@ -332,43 +511,27 @@ class SpiceFrontEnd:
 
         offset = float(t[0])
         shifted = t - offset
+        results = self.simulate(self.build(shifted, driven))
 
-        try:
-            ngspice = _shared_instance()
-        except Exception as error:  # pragma: no cover - environment dependent
-            raise RuntimeError(
-                "ngspice is not available. Install the 'spice' extra (PySpice) and "
-                "the ngspice shared library, e.g. 'apt install libngspice0'."
-            ) from error
-
-        from PySpice.Spice.NgSpice.Shared import NgSpiceCommandError
-
-        ngspice.load_circuit(self.build(shifted, driven))
-        try:
-            ngspice.run()
-        except NgSpiceCommandError:
-            # PySpice flags benign ngspice banners on stderr as failures. Decide
-            # from whether the run produced data instead.
-            pass
-
-        plot = ngspice.plot(None, ngspice.last_plot)
-        names = {name.lower(): name for name in plot.keys()}
-        if "time" not in names:
-            raise RuntimeError(
-                f"SPICE run produced no transient data.\nstderr:\n{ngspice.stderr}"
+        time = _lookup(results, "time")
+        if time is None:
+            raise NgspiceError(
+                f"no time vector in the results; got {sorted(results)}. "
+                "Did the netlist run a transient analysis?"
             )
+        time = np.real(time)
 
-        t_raw = np.asarray(plot[names["time"]].to_waveform(), dtype=float)
-        results = {}
+        conditioned: dict[str, NDArray[np.floating]] = {}
         for wanted in self.output_names:
-            if wanted.lower() not in names:
-                raise RuntimeError(
-                    f"node {wanted!r} is not in the results. Available: {sorted(names)}"
+            found = _lookup(results, wanted)
+            if found is None:
+                raise NgspiceError(
+                    f"node {wanted!r} is not in the results. Available: {sorted(results)}"
                 )
-            raw = np.asarray(plot[names[wanted.lower()]].to_waveform(), dtype=float)
-            results[wanted] = raw if not resample else np.interp(shifted, t_raw, raw)
+            values = np.real(found)
+            conditioned[wanted] = np.interp(shifted, time, values) if resample else values
 
-        t_out = t if resample else t_raw + offset
+        t_out = t if resample else time + offset
         if isinstance(self.outputs, str):
-            return t_out, results[self.outputs]
-        return t_out, results
+            return t_out, conditioned[self.outputs]
+        return t_out, conditioned

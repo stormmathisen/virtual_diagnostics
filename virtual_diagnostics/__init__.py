@@ -42,7 +42,15 @@ from .export import to_csv, to_hdf5, to_spice_pwl
 from .noise import default_rng, jitter, quantise, read, shot
 from .plotting import plot_image, plot_projections, plot_signal
 from .screen import Screen, ScreenImage, Spectrometer, StreakedScreen, deconvolve, profile_moments
-from .spice import SpiceFrontEnd, ngspice_available
+from .spice import (
+    NgspiceError,
+    NgspiceNotFound,
+    SpiceFrontEnd,
+    ngspice_available,
+    ngspice_executable,
+    ngspice_version,
+    read_rawfile,
+)
 
 __version__ = "0.1.0"
 
@@ -59,6 +67,8 @@ __all__ = [
     "ElectrodePickup",
     "ElectrodeSignals",
     "LogAmpReadout",
+    "NgspiceError",
+    "NgspiceNotFound",
     "Screen",
     "ScreenImage",
     "Spectrometer",
@@ -78,7 +88,10 @@ __all__ = [
     "plot_signal",
     "profile_moments",
     "quantise",
+    "read_rawfile",
     "ngspice_available",
+    "ngspice_executable",
+    "ngspice_version",
     "read",
     "shot",
     "to_csv",

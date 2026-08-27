@@ -14,12 +14,13 @@ plain struct of NumPy arrays — any tracking code that can produce seven arrays
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install -e ".[all]"     # or pick: cheetah, spice, hdf5, docs, dev
-sudo apt install libngspice0          # only for the SPICE front end
+.venv/bin/pip install -e ".[all]"     # or pick: cheetah, hdf5, docs, dev
+sudo apt install ngspice              # only for the SPICE front end
 ```
 
-Core dependencies are NumPy, SciPy and Matplotlib. Cheetah (and torch) is optional, and
-so is PySpice.
+Core dependencies are NumPy, SciPy and Matplotlib. Cheetah (and torch) is optional. The
+SPICE front end shells out to the **ngspice binary** — no Python SPICE binding is used or
+needed; without it, `ngspice_available()` is `False` and everything else still works.
 
 ## Sixty seconds
 
