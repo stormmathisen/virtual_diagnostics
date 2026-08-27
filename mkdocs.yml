@@ -1,0 +1,69 @@
+site_name: virtual_diagnostics
+site_description: Turn simulated particle distributions into realistic accelerator diagnostic outputs.
+repo_url: https://github.com/stormmathisen/virtual_diagnostics
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle: { icon: material/weather-sunny, name: Light mode }
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+            show_root_heading: true
+            show_source: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+  - tables
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Concepts: concepts.md
+  - Guides:
+      - Screens and cameras: guides/screens.md
+      - Charge and current: guides/charge.md
+      - Beam position monitors: guides/bpm.md
+      - Energy and bunch length: guides/longitudinal.md
+      - Signal conditioning in SPICE: guides/spice.md
+      - Other simulation codes: guides/other-codes.md
+  - Physics and assumptions: physics.md
+  - API reference:
+      - Beam: api/beam.md
+      - Screens: api/screen.md
+      - Electronic: api/electronic.md
+      - BPMs: api/bpm.md
+      - SPICE: api/spice.md
+      - Noise: api/noise.md
+      - Plotting: api/plotting.md
+      - Export: api/export.md

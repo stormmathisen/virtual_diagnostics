@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "virtual-diagnostics"
+version = "0.1.0"
+description = "Turn simulated 6D particle distributions into realistic accelerator diagnostic outputs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Storm Mathisen", email = "storm.mathisen@stfc.ac.uk" }]
+keywords = ["accelerator", "diagnostics", "beam", "simulation", "cheetah"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: Python :: 3",
+]
+dependencies = ["numpy>=1.24", "scipy>=1.10", "matplotlib>=3.7"]
+
+[project.optional-dependencies]
+cheetah = ["cheetah-accelerator>=0.7"]
+spice = ["PySpice>=1.5"]
+hdf5 = ["h5py>=3.8"]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+]
+dev = ["pytest>=7.4"]
+all = ["virtual-diagnostics[cheetah,spice,hdf5,docs,dev]"]
+
+[project.urls]
+Documentation = "https://github.com/stormmathisen/virtual_diagnostics"
+Source = "https://github.com/stormmathisen/virtual_diagnostics"
+
+[tool.hatch.build.targets.wheel]
+packages = ["virtual_diagnostics"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

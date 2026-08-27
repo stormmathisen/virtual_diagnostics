@@ -1,0 +1,35 @@
+* CLARA-style BPM delay-line combiner
+*
+* Each opposing pair of buttons is joined by a length of cable and read out at
+* one end.  The near button appears immediately; the far button arrives one
+* line delay later.  One digitiser channel then carries both, and the
+* difference in peak height is proportional to position.
+*
+* Sources Vb1..Vb4 are placeholders -- SpiceFrontEnd replaces their values with
+* the electrode waveforms.  Buttons 1 and 4 sit at +/-45 degrees (beam right),
+* buttons 2 and 3 at the mirror angles (beam left).
+
+* --- horizontal pair: right (1,4) read directly, left (2,3) delayed ---
+Vb1 b1 0 PWL(0 0)
+Vb2 b2 0 PWL(0 0)
+Vb3 b3 0 PWL(0 0)
+Vb4 b4 0 PWL(0 0)
+
+* passive sum of the two buttons on each side, into 50 ohm
+Rb1 b1 right 100
+Rb4 b4 right 100
+Rb2 b2 left  100
+Rb3 b3 left  100
+Rright right 0 50
+Rleft  left  0 50
+
+* the delay line joins the two sides; we tap the right-hand end
+Tdelay right 0 left 0 Z0=50 TD=2n
+Rsum right sumx 50
+
+* front-end shaping: band limit, then a x4 stage
+Rf sumx filt 25
+Cf filt 0 4p
+Eamp xout 0 filt 0 4
+Rload xout 0 1e6
+.end
