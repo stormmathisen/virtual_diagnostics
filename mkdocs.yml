@@ -57,7 +57,7 @@ nav:
       - Beam position monitors: guides/bpm.md
       - Energy and bunch length: guides/longitudinal.md
       - Signal conditioning in SPICE: guides/spice.md
-      - A real front end: CLARA's charge AFE: guides/front-end.md
+      - "A real front end: CLARA's charge AFE": guides/front-end.md
       - Other simulation codes: guides/other-codes.md
   - Physics and assumptions: physics.md
   - API reference:
