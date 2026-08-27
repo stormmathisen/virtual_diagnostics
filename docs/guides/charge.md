@@ -74,6 +74,11 @@ cups:
 ict.peak_charge(volts, calibration=volts_per_coulomb)
 ```
 
+!!! tip "A real front end, end to end"
+    [A real front end: CLARA's charge AFE](front-end.md) drives a published charge
+    front end with both a Faraday cup and a wall current monitor, and reproduces the
+    amplitudes measured on the machine.
+
 ## The log-amp readout
 
 CLARA's ICT IOCs report charge through a logarithmic amplifier, $Q = Q_\mathrm{Cal}

@@ -1,0 +1,68 @@
+* CLARA analog front end for bunch charge measurement
+*
+* Approximates the signal chain in:
+*   S. L. Mathisen, T. H. Pacey, R. J. Smith, "Analog Front End for Measuring
+*   1 to 250 pC Bunch Charge at CLARA", IBIC2022, MOP32.
+*   doi:10.18429/JACoW-IBIC2022-MOP32
+*
+*   input --> 100 MHz RC low pass --> unity-gain FET buffer
+*         --> charge integrator (R_f || C_f, ADA4350) --> output buffer --> out
+*
+* Vin is driven with the pickup voltage developed across 50 ohm, so the charge
+* reaching the summing node is the bunch charge and the integrator output is
+* -Q/C_f: negative for a Faraday cup, positive for a WCM's image current.
+*
+* WHAT IS FROM THE PAPER
+*   The 100 MHz input filter cut-off; the unity-gain FET input buffer; the
+*   ADA4350 charge integrator with switchable feedback; the five feedback
+*   capacitances and operating ranges of Table 1; the output polarities of
+*   Figs. 4 and 5.
+*
+* WHAT IS INFERRED, AND WHY
+*   RF is not given. Fig. 2 describes integration above 10 MHz, which would put
+*   RF*CF at about 16 ns -- but the text states that bunch charge is
+*   proportional to the *peak* of the output, which only holds when RF*CF is far
+*   longer than the bunch, and Figs. 4-6 show microsecond-wide pulses. RF is
+*   therefore set for RF*CF = 1 us, so the stage integrates the bunch fully and
+*   the peak is -GOUT*Q/CF independent of pulse shape.
+*
+*   GOUT is not given either. The per-setting gains in Fig. 3 are not a common
+*   factor, so each sensitivity path needs its own; the values used are fitted
+*   to the saturation points of Fig. 3 and listed in examples/clara_front_end.py.
+*   Both are calibration knobs, not datasheet values.
+
+.param CF=1n
+.param RF=1k
+.param GOUT=2.8
+
+* --- input: 50 ohm termination and the 100 MHz single-pole filter ---
+Vin in 0 PWL(0 0)
+Rterm in 0 50
+Rflt in flt 50
+Cflt flt 0 31.83p
+
+* --- unity-gain FET input buffer, high impedance, inside the RF shield ---
+Ebuf buf 0 flt 0 1.0
+Rbuf buf 0 1e9
+
+* --- charge integration stage: inverting, feedback R_f || C_f ---
+* 50 ohm into the virtual earth, so charge in = the bunch charge.
+Rs buf sj 50
+* Op amp: open-loop gain 1e5 with a dominant pole at 100 kHz, so about 10 GHz
+* gain-bandwidth. That is generous for a real part, and deliberately so: the
+* loop bandwidth of this stage is GBW/(Zf/Rs), and on the 2 pF setting a 1 GHz
+* amplifier runs out of it and fails to capture the whole bunch charge. Keeping
+* the amplifier out of the way makes the peak -GOUT*Q/CF on every setting, which
+* is what the sensitivity table assumes.
+Egm p1 0 0 sj 1e5
+Rp p1 p2 1k
+Cp p2 0 1.59n
+Eoa oa 0 p2 0 1.0
+Roa oa iout 10
+Rfb sj iout {RF}
+Cfb sj iout {CF}
+
+* --- unity-gain output buffer (GOUT lumps the chain's residual gain) ---
+Eob out 0 iout 0 {GOUT}
+Rload out 0 1e6
+.end

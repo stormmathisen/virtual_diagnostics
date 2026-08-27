@@ -114,6 +114,13 @@ exactly how big it is before you build anything.
 which is the natural way to write a delay line. Use `LTRA` if you need loss and
 dispersion.
 
+## A worked example from real hardware
+
+[A real front end: CLARA's charge AFE](front-end.md) builds a netlist for a published,
+built and measured instrument and drives it with two very different charge devices. It is
+the best illustration of why the netlist belongs outside Python: the same front end reads
+a Faraday cup and a 6 GHz wall current monitor, and only a parameter changes.
+
 ## Export a waveform instead
 
 If you would rather drive the simulation yourself, in LTspice or a batch ngspice run,
