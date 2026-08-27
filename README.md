@@ -1,6 +1,7 @@
 # virtual_diagnostics
 
 [![CI](https://github.com/stormmathisen/virtual_diagnostics/actions/workflows/ci.yml/badge.svg)](https://github.com/stormmathisen/virtual_diagnostics/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-github.io-blue)](https://stormmathisen.github.io/virtual_diagnostics/)
 
 Turn simulated particle distributions into realistic accelerator diagnostic outputs.
 
@@ -82,6 +83,9 @@ t, trace = combiner.run(signals.t, signals.volts)
 
 ## Documentation
 
+<https://stormmathisen.github.io/virtual_diagnostics/>
+
+
 ```bash
 .venv/bin/mkdocs serve
 ```
@@ -135,26 +139,22 @@ Three jobs, on push and pull request:
 gh run download -n site -D site && python -m http.server -d site 8000
 ```
 
-### Publishing the docs
+### Published docs
 
-A `publish-docs` job is wired up but disabled. GitHub Pages **cannot serve a private
-repository on the Free plan**, and on Pro/Team a Pages site built from a private repo is
-publicly readable — only Enterprise Cloud offers access-controlled private Pages. So
-publishing means either upgrading, or making the repo public.
+<https://stormmathisen.github.io/virtual_diagnostics/> — deployed by the `publish-docs`
+job on every push to `main`.
 
-When either is true:
+The job is gated on the `PUBLISH_DOCS` repository variable so forks do not fail on it.
+To enable it elsewhere:
 
 ```bash
-gh api -X POST repos/stormmathisen/virtual_diagnostics/pages -f build_type=workflow
+gh api -X POST repos/OWNER/REPO/pages -f build_type=workflow
 gh variable set PUBLISH_DOCS --body true
 ```
 
-The next push to `main` deploys to <https://stormmathisen.github.io/virtual_diagnostics/>.
-
-Known-answer checks, not smoke tests: charge conservation through a screen, PSF adding in
-quadrature, the Poisson kernel integrating to one, a stripline's zero DC response, the
-log-amp round trip, BPM resolution scaling as 1/Q, and the Cheetah `tau`-to-time sign
-convention.
+GitHub Pages needs a public repository, or GitHub Pro for a private one — and on Pro the
+published site is public regardless of the repo's visibility. Only Enterprise Cloud
+offers access-controlled private Pages.
 
 ## Licence
 

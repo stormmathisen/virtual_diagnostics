@@ -129,17 +129,18 @@ jobs:
         with:
           path: site/
 
-  # Dormant until PUBLISH_DOCS is set. GitHub Pages cannot serve a private
-  # repository on the Free plan, so enabling this needs either GitHub Pro or a
-  # public repository, and then:
+  # Gated on the PUBLISH_DOCS repository variable so a fork, or this repo
+  # before Pages was enabled, does not fail here. To turn it on:
   #   gh api -X POST repos/OWNER/REPO/pages -f build_type=workflow
   #   gh variable set PUBLISH_DOCS --body true
+  # Note that Pages needs a public repository, or GitHub Pro for a private one
+  # -- and on Pro the published site is public regardless.
   publish-docs:
     name: publish docs
     needs: docs
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main'
-      && vars.PUBLISH_DOCS == 'true'
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main' && vars.PUBLISH_DOCS == 'true'
     runs-on: ubuntu-latest
     permissions:
       pages: write
